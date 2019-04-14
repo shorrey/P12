@@ -6,6 +6,7 @@ import queue
 import select
 import json
 import time
+import copy
 
 import P12common
 
@@ -48,13 +49,20 @@ def remove_sock(s):
 def find_next_task(prev_task):
     ''' search for new task '''
     prev_pos = [0, 0, 0, 0, 0, 4, 5, 6]
+    pairs = [  # сколько пар осталось заполнить
+        [0, 0, 2, 2, 2],  # 5
+        [0, 0, 2, 2, 2, 2],  # 6
+        [0, 0, 2, 2, 2, 2, 2]  # 7
+    ]
     v = []
-    matrix = copy.deepcopy(STARTM)
+    matrix = copy.deepcopy(P12common.STARTM)
     for i in range(len(prev_task)):
         f = i // 9 + 5
         pos = prev_pos[f] + prev_task[i] - 0x60
         v.append(pos)
         prev_pos[f] = pos
+        for f0 in matrix[pos]:
+            pairs[f - 5][f0] -= 1
         matrix[pos].append(f)
     # now have v (positions) and matrix
     start_v = 0
@@ -63,10 +71,51 @@ def find_next_task(prev_task):
         # not initial calc
         start_v = len(v) - 1
         start_pos = v.pop() + 1
+        matrix[start_pos - 1].remove(start_v // 9 + 5)
+        for f0 in matrix[start_pos - 1]:
+            pairs[start_v // 9][f0] += 1
 
-    while len(v) < 9 * 3:
-        
-    
+    while start_v < 9 * 3:
+        # пробуем поставить v в каждую позицию, начиная со start_pos
+        if start_pos >= P12common.V_COUNT:
+            # спускаемся на уровень ниже
+            start_v = len(v) - 1
+            if start_v < 0:
+                return None
+            start_pos = v.pop() + 1
+            matrix[start_pos - 1].remove(start_v // 9 + 5)
+            for f0 in matrix[start_pos - 1]:
+                pairs[start_v // 9][f0] += 1
+            continue
+
+        # check count
+        if len(matrix[start_pos]) > 2:
+            start_pos += 1
+            continue
+        # check pairs
+        for f0 in matrix[start_pos]:
+            if pairs[start_v // 9][f0] < 1:
+                # идём на следующую позицию
+                start_pos += 1
+                continue
+        # check loop
+        if not P12common.test_loop_bfs(matrix, start_pos, start_v // 9 + 5):
+            start_pos += 1
+            continue
+
+        # а теперь ставим и продолжаем
+        for f0 in matrix[start_pos]:
+            pairs[start_v // 9][f0] -= 1
+        matrix[start_pos].append(start_v // 9 + 5)
+        start_v += 1
+        if start_v // 9 > (start_v - 1) // 9:
+            start_pos = 11
+        else:
+            start_pos += 1
+
+    # v - new task
+    print(matrix)
+    return P12common.m_to_s(matrix)
 
 
 def take_task(task, client):
@@ -196,7 +245,7 @@ except Exception as e:
 
 if len(free_tasks) < free_task_count:
     # need to create tasks
-
+    find_next_task('')
 
 try:
     while inputs:
