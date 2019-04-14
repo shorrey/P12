@@ -23,6 +23,8 @@ solution_file = 'solution.txt'  # append only!
 
 free_tasks = []  # free task list
 taken_tasks = {}  # tasks taken by clients task: {uuid, time, state}
+no_more_task = False  # where all tasks was found
+task_last_found = ''
 
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.setblocking(0)
@@ -76,6 +78,8 @@ def find_next_task(prev_task):
             pairs[start_v // 9][f0] += 1
 
     while start_v < 9 * 3:
+        #print("start_v %d start_pos %d\n%s" % 
+        #      (start_v, start_pos, str(v)))
         # пробуем поставить v в каждую позицию, начиная со start_pos
         if start_pos >= P12common.V_COUNT:
             # спускаемся на уровень ниже
@@ -92,18 +96,24 @@ def find_next_task(prev_task):
         if len(matrix[start_pos]) > 2:
             start_pos += 1
             continue
+        # chec same
+        if matrix[start_pos] == matrix[start_pos - 1]:
+            start_pos += 1
+            continue
         # check pairs
+        passed = False
         for f0 in matrix[start_pos]:
-            if pairs[start_v // 9][f0] < 1:
-                # идём на следующую позицию
-                start_pos += 1
-                continue
+            passed |= (pairs[start_v // 9][f0] < 1)
+        if passed:
+            start_pos += 1
+            continue
         # check loop
         if not P12common.test_loop_bfs(matrix, start_pos, start_v // 9 + 5):
             start_pos += 1
             continue
 
         # а теперь ставим и продолжаем
+        v.append(start_pos)
         for f0 in matrix[start_pos]:
             pairs[start_v // 9][f0] -= 1
         matrix[start_pos].append(start_v // 9 + 5)
@@ -117,6 +127,23 @@ def find_next_task(prev_task):
     print(matrix)
     return P12common.m_to_s(matrix)
 
+
+def add_tasks():
+    global task_last_found
+    global no_more_task
+    while len(free_tasks) < free_task_count and not no_more_task:
+        task = find_next_task(task_last_found)
+        if not task:
+            no_more_task = True
+            return
+        task_last_found = task
+        free_tasks.append(task.decode('utf-8'))
+        try:
+            with open(free_tasks_file, "w") as ftf:
+                json.dump(free_tasks, ftf)
+        except Exception as e:
+            print("Write to free tasks file: %s" % str(e))
+        print("add task %s to free list" % task.decode('utf-8'))
 
 def take_task(task, client):
     ''' move task from free to taken '''
@@ -242,10 +269,14 @@ try:
 except Exception as e:
     print("Opening taken tasks file: %s" % str(e))
 
+for t in free_tasks + list(taken_tasks.keys()):
+    if task_last_found < t:
+        task_last_found = t
+    
 
 if len(free_tasks) < free_task_count:
     # need to create tasks
-    find_next_task('')
+    add_tasks()
 
 try:
     while inputs:
