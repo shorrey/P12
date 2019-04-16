@@ -14,7 +14,7 @@ listen_ip = '0.0.0.0'
 listen_port = 4588
 listen_max_conn = 5
 
-free_task_count = 10
+free_task_count = 3
 
 free_tasks_file = 'free_tasks.json'
 taken_tasks_file = 'taken_tasks.json'
@@ -24,7 +24,7 @@ solution_file = 'solution.txt'  # append only!
 free_tasks = []  # free task list
 taken_tasks = {}  # tasks taken by clients task: {uuid, time, state}
 no_more_task = False  # where all tasks was found
-task_last_found = ''
+task_last_found = b''
 
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.setblocking(0)
@@ -35,6 +35,8 @@ inputs = [server]
 outputs = []
 msgq = {}
 uuids = {}
+
+th = None
 
 
 def remove_sock(s):
@@ -49,7 +51,8 @@ def remove_sock(s):
 
 
 def find_next_task(prev_task):
-    ''' search for new task '''
+    ''' search for new task
+        prev_task - bytes!!! '''
     prev_pos = [0, 0, 0, 0, 0, 4, 5, 6]
     pairs = [  # сколько пар осталось заполнить
         [0, 0, 2, 2, 2],  # 5
@@ -150,9 +153,10 @@ def take_task(task, client):
     if task not in free_tasks:
         return False
     try:
-        taken_tasks[task] = {'uuid': client,
+        taken_tasks[task] = {'uuid': uuids[client],
                              'time': time.time(),
                              'state': None}
+        msgq[client].put(json.dumps({'task': task}))
     except Exception as e:
         print("Error while marking task: %s" % str(e))
         return False
@@ -165,10 +169,14 @@ def take_task(task, client):
         print("Write to free tasks file: %s" % str(e))
 
     try:
-        with open(taken_tasks_file, "r") as ttf:
+        with open(taken_tasks_file, "w") as ttf:
             json.dump(taken_tasks, ttf)
     except Exception as e:
         print("Write to taken tasks file: %s" % str(e))
+
+    # start add_tasks in other thread
+    th = threading.Thread(target = add_tasks, args = ())
+    th.start()
 
     return True
 
@@ -182,6 +190,10 @@ def task_state_changed(task, new_state, client):
         print("Client %s changes state of task %s, but its uuid is %s" %
               (client, str(task), taken_tasks[task]['uuid']))
 
+    if new_state == 'started':
+        taken_tasks[task]['state'] = 'started'
+        taken_tasks[task]['time'] = time.time()
+    
     if new_state == 'solved':
         try:
             with open(solved_tasks_file, "a") as sf:
@@ -190,8 +202,8 @@ def task_state_changed(task, new_state, client):
             print("Can not write solved tasks file: %s" % str(e))
         taken_tasks.pop(task)
 
-    elif new_state == 'dropped':
-        # client drops to solve task. return it to free list
+    elif new_state == 'canceled':
+        # client cancel to solve task. return it to free list
         free_tasks.append(task)
         taken_tasks.pop(task)
 
@@ -202,7 +214,7 @@ def task_state_changed(task, new_state, client):
             print("Write to free tasks file: %s" % str(e))
 
     try:
-        with open(taken_tasks_file, "r") as ttf:
+        with open(taken_tasks_file, "w") as ttf:
             json.dump(taken_tasks, ttf)
     except Exception as e:
         print("Write to taken tasks file: %s" % str(e))
@@ -230,7 +242,8 @@ def serve_msg(s, msg):
             # client requests task
             if s in uuids:
                 print("Client %s request task" % uuids[s])
-                msgq[s].put(json.dumps({'task': 'task1id'}))
+                if len(free_tasks) > 0:
+                    take_task(free_tasks[0], s)
             else:
                 print("Unregistered client request task")
                 return False
@@ -270,8 +283,8 @@ except Exception as e:
     print("Opening taken tasks file: %s" % str(e))
 
 for t in free_tasks + list(taken_tasks.keys()):
-    if task_last_found < t:
-        task_last_found = t
+    if task_last_found < bytes(t, 'utf-8'):
+        task_last_found = bytes(t, 'utf-8')
     
 
 if len(free_tasks) < free_task_count:
