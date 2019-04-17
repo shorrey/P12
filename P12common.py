@@ -30,14 +30,14 @@ V_COUNT = 44
 
 def send_msg(s, msg):
     data_to_send = len(msg).to_bytes(4, 'little') + bytes(msg, 'utf-8')
-    print(data_to_send)
+    # print(data_to_send)
     try:
         s.send(data_to_send)
     except Exception:
         return False
     else:
         return True
-    
+
 
 def is_common(m1, m2):
     ''' returns true if ther is an edge '''

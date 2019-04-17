@@ -27,6 +27,7 @@ no_more_task = False  # where all tasks was found
 task_last_found = b''
 
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 server.setblocking(0)
 server.bind((listen_ip, listen_port))
 server.listen(listen_max_conn)
@@ -81,7 +82,7 @@ def find_next_task(prev_task):
             pairs[start_v // 9][f0] += 1
 
     while start_v < 9 * 3:
-        #print("start_v %d start_pos %d\n%s" % 
+        # print("start_v %d start_pos %d\n%s" %
         #      (start_v, start_pos, str(v)))
         # пробуем поставить v в каждую позицию, начиная со start_pos
         if start_pos >= P12common.V_COUNT:
@@ -148,6 +149,7 @@ def add_tasks():
             print("Write to free tasks file: %s" % str(e))
         print("add task %s to free list" % task.decode('utf-8'))
 
+
 def take_task(task, client):
     ''' move task from free to taken '''
     if task not in free_tasks:
@@ -175,7 +177,7 @@ def take_task(task, client):
         print("Write to taken tasks file: %s" % str(e))
 
     # start add_tasks in other thread
-    th = threading.Thread(target = add_tasks, args = ())
+    th = threading.Thread(target=add_tasks, args=())
     th.start()
 
     return True
@@ -193,7 +195,7 @@ def task_state_changed(task, new_state, client):
     if new_state == 'started':
         taken_tasks[task]['state'] = 'started'
         taken_tasks[task]['time'] = time.time()
-    
+
     if new_state == 'solved':
         try:
             with open(solved_tasks_file, "a") as sf:
@@ -202,7 +204,7 @@ def task_state_changed(task, new_state, client):
             print("Can not write solved tasks file: %s" % str(e))
         taken_tasks.pop(task)
 
-    elif new_state == 'canceled':
+    elif new_state in ('canceled', 'failed'):
         # client cancel to solve task. return it to free list
         free_tasks.append(task)
         taken_tasks.pop(task)
@@ -285,7 +287,7 @@ except Exception as e:
 for t in free_tasks + list(taken_tasks.keys()):
     if task_last_found < bytes(t, 'utf-8'):
         task_last_found = bytes(t, 'utf-8')
-    
+
 
 if len(free_tasks) < free_task_count:
     # need to create tasks
