@@ -1,0 +1,7 @@
+[Unit]
+Description=P12 Server
+
+
+[Service]
+WorkingDirectory=/opt/P12
+ExecStart=/opt/P12/server.py
