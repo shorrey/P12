@@ -69,14 +69,22 @@ def check_tasks_timeout():
     ''' check each taken task for its time and uuid availability '''
     if time.time() < start_time_timeout + start_time:
         return False
+    remove_list = []
     for t in taken_tasks.keys():
         if taken_tasks[t]['time'] + old_task_timeout < time.time():
             if taken_tasks[t]['uuid'] not in uuids:
                 # need to move this task to free_tasks
                 logging.info("Task %s is not solved for too long." %
                              (t))
-                free_tasks.append(t)
-                taken_tasks.pop(t)
+                remove_list.append(t)
+
+    if remove_list:
+        for t in remove_list:
+            free_tasks.append(t)
+            taken_tasks.pop(t)
+        write_free_tasks()
+        write_taken_tasks()
+
     return True
 
 
