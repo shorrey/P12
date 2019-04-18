@@ -13,7 +13,9 @@ import P12common
 
 listen_ip = '0.0.0.0'
 listen_port = 4588
-listen_max_conn = 5
+listen_max_conn = 10
+
+select_timeout = 1
 
 free_task_count = 3
 
@@ -41,6 +43,41 @@ msgq = {}
 uuids = {}
 
 th = None
+
+old_task_timeout = 60*60*24  # 1 day in secs
+start_time_timeout = 60  # 1 minute from start to begin task check
+start_time = time.time()
+
+
+def write_free_tasks():
+    try:
+        with open(free_tasks_file, "w") as ftf:
+            json.dump(free_tasks, ftf)
+    except Exception as e:
+        logging.error("Write to free tasks file: %s" % str(e))
+
+
+def write_taken_tasks():
+    try:
+        with open(taken_tasks_file, "w") as ttf:
+            json.dump(taken_tasks, ttf)
+    except Exception as e:
+        logging.error("Write to taken tasks file: %s" % str(e))
+
+
+def check_tasks_timeout():
+    ''' check each taken task for its time and uuid availability '''
+    if time.time() < start_time_timeout + start_time:
+        return False
+    for t in taken_tasks.keys():
+        if taken_tasks[t]['time'] + old_task_timeout < time.time():
+            if taken_tasks[t]['uuid'] not in uuids:
+                # need to move this task to free_tasks
+                logging.info("Task %s is not solved for too long." %
+                             (t))
+                free_tasks.append(t)
+                taken_tasks.pop(t)
+    return True
 
 
 def remove_sock(s):
@@ -145,11 +182,7 @@ def add_tasks():
             return
         task_last_found = task
         free_tasks.append(task.decode('utf-8'))
-        try:
-            with open(free_tasks_file, "w") as ftf:
-                json.dump(free_tasks, ftf)
-        except Exception as e:
-            logging.error("Write to free tasks file: %s" % str(e))
+        write_free_tasks()
         logging.info("add task %s to free list" % task.decode('utf-8'))
 
 
@@ -167,17 +200,8 @@ def take_task(task, client):
         return False
     free_tasks.remove(task)
     # write to files
-    try:
-        with open(free_tasks_file, "w") as ftf:
-            json.dump(free_tasks, ftf)
-    except Exception as e:
-        logging.error("Write to free tasks file: %s" % str(e))
-
-    try:
-        with open(taken_tasks_file, "w") as ttf:
-            json.dump(taken_tasks, ttf)
-    except Exception as e:
-        logging.error("Write to taken tasks file: %s" % str(e))
+    write_free_tasks()
+    write_taken_tasks()
 
     # start add_tasks in other thread
     th = threading.Thread(target=add_tasks, args=())
@@ -193,7 +217,7 @@ def task_state_changed(task, new_state, client):
         return False
     if taken_tasks[task]['uuid'] != client:
         logging.warn("Client %s changes state of task %s, but its uuid is %s" %
-              (client, str(task), taken_tasks[task]['uuid']))
+                     (client, str(task), taken_tasks[task]['uuid']))
 
     if new_state == 'started':
         taken_tasks[task]['state'] = 'started'
@@ -211,18 +235,9 @@ def task_state_changed(task, new_state, client):
         # client cancel to solve task. return it to free list
         free_tasks.append(task)
         taken_tasks.pop(task)
+        write_free_tasks()
 
-        try:
-            with open(free_tasks_file, "w") as ftf:
-                json.dump(free_tasks, ftf)
-        except Exception as e:
-            logging.error("Write to free tasks file: %s" % str(e))
-
-    try:
-        with open(taken_tasks_file, "w") as ttf:
-            json.dump(taken_tasks, ttf)
-    except Exception as e:
-        logging.error("Write to taken tasks file: %s" % str(e))
+    write_taken_tasks()
 
     return True
 
@@ -236,7 +251,7 @@ def serve_msg(s, msg):
         for k in uuids.keys():
             if uuids[k] == obj['register']:
                 logging.info("Client %s was registered. Re-register" %
-                      obj['register'])
+                             obj['register'])
                 uuids.pop(k)
         uuids[s] = obj['register']
         msgq[s].put(json.dumps({'register': 'ok'}))
@@ -257,11 +272,12 @@ def serve_msg(s, msg):
         for task in obj['state'].keys():
             # but must by only one
             logging.info("State of task %s changed to %s" %
-                  (task, obj['state'][task]))
+                         (task, obj['state'][task]))
             task_state_changed(task, obj['state'][task], uuids[s])
 
     if 'solution' in obj.keys():
-        logging.info("Client %s find solution: %s" % (uuids[s], str(obj['solution'])))
+        logging.info("Client %s find solution: %s" %
+                     (uuids[s], str(obj['solution'])))
         try:
             with open(solution_file, "a") as f:
                 print(obj['solution'], file=f)
@@ -298,7 +314,7 @@ if len(free_tasks) < free_task_count:
 
 try:
     while inputs:
-        rd, wr, exc = select.select(inputs, outputs, inputs)
+        rd, wr, exc = select.select(inputs, outputs, inputs, select_timeout)
         for s in rd:
             if s is server:
                 # new incoming connection
@@ -335,6 +351,9 @@ try:
                 P12common.send_msg(s, next_msg)
         for s in exc:
             remove_sock(s)
+
+        check_tasks_timeout()
+
 except Exception as e:
     logging.error(e)
     for s in inputs:
