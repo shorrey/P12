@@ -8,6 +8,7 @@ import time
 import uuid
 import json
 import copy
+import logging
 
 import P12common
 
@@ -25,7 +26,8 @@ time_prev = 0
 time_delta = 10
 
 registered = False
-task_requests = 0
+
+logging.basicConfig(level=logging.DEBUG)
 
 
 def start_p(matrix, f):
@@ -49,9 +51,8 @@ def try_next(matrix, f, v_left, ind, pairs, level):
     global time_prev
     if time.time() > time_prev + time_delta:
         time_prev = time.time()
-        print("%d, %s" % (round(time_prev),
-                          threading.current_thread().name))
-        print(matrix, flush=True)
+        logging.debug("%s, %s" % (threading.current_thread().name,
+                                  str(matrix)))
     my_ind = ind
     prev_m = [0]
     while my_ind + v_left <= P12common.V_COUNT:
@@ -81,7 +82,7 @@ def try_next(matrix, f, v_left, ind, pairs, level):
                             return True
                     else:
                         if f >= P12common.F_COUNT:
-                            print(str(new_m))
+                            logging.info("Solutionfound: %s" % str(new_m))
                             msgq.put({'solution': new_m})
                             return True
                         if try_next(new_m, f + 1,
@@ -105,8 +106,7 @@ def start_task(task):
     ''' start task if possible '''
     global task_thread
     if not task_thread.is_alive() and task_thread.name == 'waiting':
-        print("starting thread to solve task %s" %
-              (task))
+        logging.info("starting thread to solve task %s" % task)
         matrix = P12common.s_to_m(bytes(task, 'utf-8'))
         task_thread = threading.Thread(target=try_next, args=(
                                        matrix,  # matrix
@@ -128,10 +128,10 @@ def serve_msg(s, msg):
     obj = json.loads(msg.decode('utf-8'))
     if 'register' in obj.keys():
         if obj['register'] == 'ok':
-            print("successfully registered on server")
+            logging.info("Successfully registered on server")
             registered = True
         else:
-            print("Failed to register on server: %s" % obj['register'])
+            logging.error("Failed to register on server: %s" % obj['register'])
     if 'task' in obj.keys():
         # can take task?
         task = obj['task']
@@ -143,16 +143,18 @@ def serve_msg(s, msg):
     return True
 
 
+connect_result_old = 0
 while True:
     registered = False
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    print("Try to connect")
+    logging.info("Try to connect to server %s:%d" % (server_ip, server_port))
     connect_result = s.connect_ex((server_ip, server_port))
     if connect_result == 0:
+        connect_result_old = 0
         # register on server as soon as possible
         msgq.put({'register': my_uuid})
         # have connected to server
-        print("connected")
+        logging.info("Successfully connected")
         while True:
             rd, wr, exc = select.select([s],
                                         [] if msgq.empty() else [s],
@@ -163,22 +165,22 @@ while True:
                 msg_len_s = s.recv(4)
                 if len(msg_len_s) == 0:
                     # closed connection
-                    print("server close connection")
+                    logging.warn("Server closed connection")
                     s.close()
                     break
                 msg_len = int.from_bytes(msg_len_s, 'little')
                 msg = s.recv(msg_len)
-                print("received %s" % msg)
+                logging.debug("Received %s" % msg)
                 serve_msg(s, msg)
             if wr:
                 # can send
                 if not msgq.empty():
                     if not P12common.send_msg(s, json.dumps(msgq.get())):
                         # some error
-                        print("ERR while sending")
+                        logging.error("ERR while sending msg to server")
             if exc:
                 # some exception
-                print("something wrong")
+                logging.error("Something wrong")
                 s.close()
                 break
 
@@ -186,17 +188,20 @@ while True:
             if registered:
                 if (not task_thread.is_alive() and
                    task_thread.name != 'waiting'):
-                    print("request new task for thread '%s'" %
-                          task_thread.name)
+                    logging.info("request new task for thread '%s'" %
+                                 task_thread.name)
                     msgq.put({'request': 'task'})
                     task_thread.setName('waiting')
 
         time.sleep(3)
     else:
-        print("connect error: %d" % connect_result)
+        if connect_result != connect_result_old:
+            logging.error("Connection error: %d" % connect_result)
+            connect_result_old = connect_result
         # retry connect after pause
         time.sleep(reconnect_timeout)
 
     s.close()
-    while not msgq.empty():
-        msgq.get()
+
+while not msgq.empty():
+    msgq.get()
