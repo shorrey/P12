@@ -11,7 +11,7 @@ import copy
 
 import P12common
 
-server_ip = '127.0.0.1'
+server_ip = '10.8.73.155'
 server_port = 4588
 reconnect_timeout = 10
 select_timeout = 1
@@ -19,10 +19,7 @@ my_uuid = str(uuid.uuid4())
 
 msgq = queue.Queue()
 
-num_thread = 1  # python does not work 2 threads on separate core
-threads = []
-for i in range(num_thread):
-    threads.append(threading.Thread())
+task_thread = threading.Thread()
 
 time_prev = 0
 time_delta = 10
@@ -106,22 +103,21 @@ def try_next(matrix, f, v_left, ind, pairs, level):
 
 def start_task(task):
     ''' start task if possible '''
-    for t_ind in range(len(threads)):
-        t = threads[t_ind]
-        if not t.is_alive() and t.name == 'waiting':
-            print("starting thread %d to solve task %s" %
-                  (t_ind, task))
-            matrix = P12common.s_to_m(bytes(task, 'utf-8'))
-            threads[t_ind] = threading.Thread(target=try_next, args=(
-                                              matrix,  # matrix
-                                              8,       # f
-                                              P12common.FV_COUNT - 2,
-                                              P12common.FV_COUNT,
-                                              start_p(matrix, 8),
-                                              1))
-            threads[t_ind].setName(task)
-            threads[t_ind].start()
-            return True
+    global task_thread
+    if not task_thread.is_alive() and task_thread.name == 'waiting':
+        print("starting thread to solve task %s" %
+              (task))
+        matrix = P12common.s_to_m(bytes(task, 'utf-8'))
+        task_thread = threading.Thread(target=try_next, args=(
+                                       matrix,  # matrix
+                                       8,       # f
+                                       P12common.FV_COUNT - 2,
+                                       P12common.FV_COUNT,
+                                       start_p(matrix, 8),
+                                       1))
+        task_thread.setName(task)
+        task_thread.start()
+        return True
     # there is not any empty thread
     return False
 
@@ -186,15 +182,14 @@ while True:
                 s.close()
                 break
 
-            # check threads
+            # check thread
             if registered:
-                for t in threads:
-                    if (not t.is_alive()) and t.name != 'waiting':
-                        print("request new task for thread '%s'" %
-                                  t.name)
-                        msgq.put({'request': 'task'})
-                        t.setName('waiting')
-                        task_requests += 1
+                if (not task_thread.is_alive() and
+                   task_thread.name != 'waiting'):
+                    print("request new task for thread '%s'" %
+                          task_thread.name)
+                    msgq.put({'request': 'task'})
+                    task_thread.setName('waiting')
 
         time.sleep(3)
     else:
