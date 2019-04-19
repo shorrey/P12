@@ -160,6 +160,15 @@ def find_next_task(prev_task):
         if passed:
             start_pos += 1
             continue
+        # при переходе на следующую грань должно быть по 2 паросочетания с
+        # каждой предыдущей
+        if start_v // 9 < (start_v + 1) // 9:
+            passed = False
+            for i in range(start_v // 9 + 5):
+                passed |= (pairs[start_v // 9][i] > 0)
+            if passed:
+                start_pos += 1
+                continue
         # check loop
         if not P12common.test_loop_bfs(matrix, start_pos, start_v // 9 + 5):
             start_pos += 1
