@@ -27,11 +27,12 @@ time_delta = 60
 
 registered = False
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 
 def start_p(matrix, f):
     pairs = [2] * (P12common.F_COUNT + 1)
+    pairs[0] = 0
     for m in matrix:
         if f in m:
             for x in m:
@@ -71,26 +72,37 @@ def try_next(matrix, f, v_left, ind, pairs, level):
                     prev_m = matrix[my_ind]
                     new_m = copy.deepcopy(matrix)
                     new_m[my_ind].append(f)
+                    new_pairs = pairs.copy()
+                    for pf in matrix[my_ind]:
+                        new_pairs[pf] = new_pairs[pf] - 1
                     if v_left > 1:
                         # продолжаем жарить ту же грань
-                        new_pairs = pairs.copy()
-                        for pf in matrix[my_ind]:
-                            new_pairs[pf] = new_pairs[pf] - 1
                         if try_next(new_m, f, v_left - 1,
                                     my_ind + 1, new_pairs,
                                     level + 1):
                             return True
                     else:
+                        # переход на следующую грань
                         if f >= P12common.F_COUNT:
-                            logging.info("Solutionfound: %s" % str(new_m))
+                            # граней больше нет => это решение
+                            logging.info("Solution found: %s" % str(new_m))
                             msgq.put({'solution': new_m})
                             return True
-                        if try_next(new_m, f + 1,
-                                    P12common.FV_COUNT - 2,
-                                    P12common.FV_COUNT,
-                                    start_p(new_m, f + 1),
-                                    level + 1):
-                            return True
+                        # проверим паросочетания f со всеми предыдущими
+                        passed = False
+                        for i in range(1, f):
+                            if new_pairs[i] > 0:
+                                passed = True
+                                break
+                        if not passed:
+                            logging.debug("pairs %d: %s" % (f, str(new_pairs)))
+                            # жарим следующую грань
+                            if try_next(new_m, f + 1,
+                                        P12common.FV_COUNT - 2,
+                                        P12common.FV_COUNT,
+                                        start_p(new_m, f + 1),
+                                        level + 1):
+                                return True
         my_ind = my_ind + 1
     else:
         if level == 1:
