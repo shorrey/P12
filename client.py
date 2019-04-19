@@ -9,10 +9,13 @@ import uuid
 import json
 import copy
 import logging
+import sys
 
 import P12common
 
-server_ip = '10.8.73.155'
+server_ip = '127.0.0.1'
+if len(sys.argv) > 1:
+    server_ip = sys.argv[1]
 server_port = 4588
 reconnect_timeout = 10
 select_timeout = 1
@@ -39,6 +42,27 @@ def start_p(matrix, f):
                 if x != f:
                     pairs[x] = pairs[x] - 1
     return pairs
+
+
+def check_loops(matrix, index, f, pairs):
+    ''' check loops in all facets '''
+    if len(matrix[index]) < 2:
+        return True
+    a = matrix[index][0]
+    b = matrix[index][1]
+    count = 0
+    if pairs[a] == 1:
+        count += 1
+        if not P12common.test_loop_in_facet(matrix, index, a, f):
+            return False
+    if pairs[b] == 1:
+        count += 1
+        if not P12common.test_loop_in_facet(matrix, index, b, f):
+            return False
+    if count > 1:
+        if not P12common.test_loop_in_facet(matrix, index, f, f):
+            return False
+    return True
 
 
 def try_next(matrix, f, v_left, ind, pairs, level):
@@ -68,7 +92,7 @@ def try_next(matrix, f, v_left, ind, pairs, level):
                         break
             else:
                 if prev_m != matrix[my_ind] and \
-                   P12common.test_loop_bfs(matrix, my_ind, f):
+                   check_loops(matrix, ind, f, pairs):
                     prev_m = matrix[my_ind]
                     new_m = copy.deepcopy(matrix)
                     new_m[my_ind].append(f)
@@ -95,7 +119,7 @@ def try_next(matrix, f, v_left, ind, pairs, level):
                                 passed = True
                                 break
                         if not passed:
-                            logging.debug("pairs %d: %s" % (f, str(new_pairs)))
+                            # logging.debug("pairs %d: %s" % (f, str(new_pairs)))
                             # жарим следующую грань
                             if try_next(new_m, f + 1,
                                         P12common.FV_COUNT - 2,

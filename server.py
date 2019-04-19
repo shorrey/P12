@@ -170,9 +170,31 @@ def find_next_task(prev_task):
                 start_pos += 1
                 continue
         # check loop
-        if not P12common.test_loop_bfs(matrix, start_pos, start_v // 9 + 5):
-            start_pos += 1
-            continue
+        #if not P12common.test_loop_bfs(matrix, start_pos, start_v // 9 + 5):
+        #    start_pos += 1
+        #    continue
+        if len(matrix[start_pos]) == 2:
+            a = matrix[start_pos][0]
+            b = matrix[start_pos][1]
+            count = 0
+            if pairs[start_v // 9][a] == 1:
+                count += 1
+                if not P12common.test_loop_in_facet(matrix, start_pos, a,
+                                                    start_v // 9 + 5):
+                    start_pos += 1
+                    continue
+            if pairs[start_v // 9][b] == 1:
+                count += 1
+                if not P12common.test_loop_in_facet(matrix, start_pos, b,
+                                                    start_v // 9 + 5):
+                    start_pos += 1
+                    continue
+            if count > 1:  # both a and b checks
+                if not P12common.test_loop_in_facet(matrix, start_pos,
+                                                    start_v // 9 + 5,
+                                                    start_v // 9 + 5):
+                    start_pos += 1
+                    continue
 
         # а теперь ставим и продолжаем
         v.append(start_pos)
