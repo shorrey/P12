@@ -93,6 +93,19 @@ def test_loop_bfs(M, ind, f):
     return True
 
 
+def pairs(matrix, f):
+    ''' return leaved pairs vector for facet f in matrix '''
+    p = [2] * (F_COUNT + 1)
+    p[0] = 0
+    p[f] = 0
+    for m in matrix:
+        if f in m:
+            for f1 in m:
+                if f1 != f:
+                    p[f1] -= 1
+    return p
+
+
 def m_to_s(matrix):
     prev_pos = [0, 0, 0, 0, 0, 4, 5, 6]  # position of last
     strings = [b'', b'', b'', b'', b'', b'', b'', b'']  # result strings

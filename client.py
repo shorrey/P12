@@ -23,11 +23,11 @@ msgq = queue.Queue()
 task_thread = threading.Thread()
 
 time_prev = 0
-time_delta = 10
+time_delta = 60
 
 registered = False
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
 def start_p(matrix, f):
