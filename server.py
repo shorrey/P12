@@ -324,6 +324,10 @@ def serve_msg(s, msg):
         except Exception as e:
             logging.error("error while write to solution file: %s" % str(e))
 
+    if 'stats' in obj.keys():
+        logging.info("Client %s stats: %s" % 
+                     (uuids[s], str(obj['stats'])))
+    
     if not msgq[s].empty():
         # add socket to output if there is something to send
         if s not in outputs:

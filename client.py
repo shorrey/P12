@@ -29,6 +29,7 @@ time_prev = 0
 time_delta = 60
 
 registered = False
+max_level = {'level': 10, 'matrix': []}
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -65,6 +66,33 @@ def check_loops(matrix, index, f, pairs):
     return True
 
 
+def try_last_f(matrix):
+    ''' do last facet '''
+    pairs = start_p(matrix, P12common.F_COUNT)
+    for i_m in range(len(matrix)):
+        if len(matrix[i_m]) == 2:
+            # test pairs
+            for f0 in matrix[i_m]:
+                if pairs[f0] < 1:
+                    logging.debug("exit by pairs %s" % str(matrix))
+                    msgq.put({'stats': {'reason': 'pairs',
+                                        'matrix': matrix}})
+                    return False
+            # test loop
+            if not check_loops(matrix, i_m, P12common.F_COUNT, pairs):
+                logging.debug("exit by loop %s" % str(matrix))
+                msgq.put({'stats': {'reason': 'loop',
+                                    'matrix': matrix}})
+                return False
+            # set
+            matrix[i_m].append(P12common.F_COUNT)
+            for f0 in matrix[i_m]:
+                pairs[f0] -= 1
+    # else its solution
+    logging.debug("solution %s" % str(matrix))
+    msgq.put({'solution': new_m})
+
+
 def try_next(matrix, f, v_left, ind, pairs, level):
     '''
     matrix - матрица текущая
@@ -80,6 +108,11 @@ def try_next(matrix, f, v_left, ind, pairs, level):
                                   str(matrix)))
     my_ind = ind
     prev_m = [0]
+
+    if level > max_level['level']:
+        max_level['level'] = level
+        max_level['matrix'] = copy.deepcopy(matrix)
+
     while my_ind + v_left <= P12common.V_COUNT:
         if len(matrix[my_ind]) < 3:
             dupple = 0
@@ -119,8 +152,9 @@ def try_next(matrix, f, v_left, ind, pairs, level):
                                 passed = True
                                 break
                         if not passed:
-                            # logging.debug("pairs %d: %s" % (f, str(new_pairs)))
                             # жарим следующую грань
+                            if f + 1 == P12common.F_COUNT:
+                                return try_last_f(new_m)
                             if try_next(new_m, f + 1,
                                         P12common.FV_COUNT - 2,
                                         P12common.FV_COUNT,
@@ -133,14 +167,23 @@ def try_next(matrix, f, v_left, ind, pairs, level):
             msgq.put({
                 'state': {
                     threading.current_thread().name: 'solved'
+                         },
+                'stats': {
+                    'maxlevel': max_level['level'],
+                    'matrix': max_level['matrix']
                          }
                      })
+            logging.debug("max level: %d, matrix: %s" % (
+                           max_level['level'],
+                           str(max_level['matrix'])))
         return False
 
 
 def start_task(task):
     ''' start task if possible '''
     global task_thread
+    global max_level
+    max_level = {'level': 10, 'matrix': []}
     if not task_thread.is_alive() and task_thread.name == 'waiting':
         logging.info("starting thread to solve task %s" % task)
         matrix = P12common.s_to_m(bytes(task, 'utf-8'))

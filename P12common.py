@@ -131,6 +131,9 @@ def test_loop_in_facet(matrix, index, facet, f):
                 else:
                     return True
 
+    if not i_a:
+        return True
+
     seen = {index, i_a}  # set of seen nodes
 
     # теперь ищем маршрут из i_a в i_b
